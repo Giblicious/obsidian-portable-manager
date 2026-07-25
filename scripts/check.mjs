@@ -12,7 +12,7 @@ const versions = json("versions.json");
 const framework = json("framework/framework-manifest.json");
 
 for (const [label, value] of [["package", packageJson.version], ["manifest", manifest.version], ["framework", framework.frameworkVersion]]) {
-  if (!/^0\.\d+\.\d+$/.test(value)) throw new Error(`${label} version must remain a public-beta 0.x.x version`);
+  if (!/^\d+\.\d+\.\d+$/.test(value)) throw new Error(`${label} version must use semantic versioning`);
   if (value !== packageJson.version) throw new Error(`${label} version ${value} differs from package version ${packageJson.version}`);
 }
 if (versions[manifest.version] !== manifest.minAppVersion) throw new Error("versions.json does not map the current plugin and minimum Obsidian versions");

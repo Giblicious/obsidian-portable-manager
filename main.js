@@ -69,7 +69,7 @@ var require_core = __commonJS({
 // framework/Maintenance/PortableMaintenance.ps1
 var require_PortableMaintenance = __commonJS({
   "framework/Maintenance/PortableMaintenance.ps1"(exports2, module2) {
-    module2.exports = `# FrameworkHelperVersion: 0.1.0
+    module2.exports = `# FrameworkHelperVersion: 1.3.0
 param(
     [switch]$CheckOnly,
     [Alias('InstallLatest')][switch]$InstallRuntime,

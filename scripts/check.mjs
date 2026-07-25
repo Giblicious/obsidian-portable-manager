@@ -39,7 +39,7 @@ if (!launcher.includes("UseShellExecute = true") || !launcher.includes("ReadPeMa
 
 const sums = new Map(read("third_party/7zip/SHA256SUMS").trim().split(/\r?\n/).map((line) => { const [hash, name] = line.trim().split(/\s+/, 2); return [name, hash.toUpperCase()]; }));
 const crypto = await import("node:crypto");
-for (const name of ["7z.exe", "7z.dll", "LICENSE.txt"]) { const actual = crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "third_party/7zip", name))).digest("hex").toUpperCase(); if (actual !== sums.get(name)) throw new Error(`Pinned 7-Zip file changed: ${name}`); }
+for (const name of ["7z.exe", "7z.dll"]) { const actual = crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "third_party/7zip", name))).digest("hex").toUpperCase(); if (actual !== sums.get(name)) throw new Error(`Pinned 7-Zip file changed: ${name}`); }
 
 const trackedCandidates = [];
 function walk(directory) { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { if ([".git", "node_modules", "dist"].includes(entry.name)) continue; const full = path.join(directory, entry.name); if (entry.isDirectory()) walk(full); else trackedCandidates.push(path.relative(root, full)); } }

@@ -1,4 +1,4 @@
-# FrameworkHelperVersion: 0.1.0
+# FrameworkHelperVersion: 1.3.0
 param(
     [switch]$CheckOnly,
     [Alias('InstallLatest')][switch]$InstallRuntime,

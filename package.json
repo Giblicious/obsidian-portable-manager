@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-portable-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "check": "node scripts/check.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "obsidian": "latest",
+    "vitest": "^3.2.4"
+  }
+}

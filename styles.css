@@ -1,0 +1,18 @@
+.opm-modal { width: min(760px, 92vw); }
+.opm-heading { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
+.opm-heading h2, .opm-heading p { margin: 0; }
+.opm-logo { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--interactive-accent); color: var(--text-on-accent); }
+.opm-logo svg { width: 25px; height: 25px; }
+.opm-health { padding: 10px 12px; border-radius: 8px; margin: 12px 0; }
+.opm-health.is-good { background: color-mix(in srgb, var(--color-green) 14%, transparent); }
+.opm-health.is-bad { background: color-mix(in srgb, var(--color-red) 14%, transparent); }
+.opm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.opm-stat, .opm-update-panel { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 10px; }
+.opm-stat-label { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.opm-stat-value { overflow-wrap: anywhere; }
+.opm-update-panel { margin-top: 12px; }
+.opm-update-panel h3 { margin: 0 0 6px; }
+.opm-actions, .opm-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.opm-state { margin-top: 10px; color: var(--text-muted); }
+.opm-state.is-failed { color: var(--text-error); }
+@media (max-width: 600px) { .opm-grid { grid-template-columns: 1fr; } }

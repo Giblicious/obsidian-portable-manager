@@ -1,0 +1,16 @@
+{
+  "frameworkVersion": "0.1.0",
+  "layoutVersion": 2,
+  "managedComponents": [
+    "Obsidian Portable.exe",
+    "Maintenance",
+    "Tools"
+  ],
+  "protectedComponents": [
+    "App",
+    "Data",
+    "portable.ini",
+    "portable-manifest.json",
+    "vault"
+  ]
+}

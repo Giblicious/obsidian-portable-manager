@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-portable-manager",
+  "name": "Obsidian Portable Manager",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Audits, repairs, and safely updates a portable Windows Obsidian package.",
+  "author": "Giblicious",
+  "authorUrl": "https://github.com/Giblicious",
+  "isDesktopOnly": true
+}

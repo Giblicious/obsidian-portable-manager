@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-fund
+      - run: npm audit --audit-level=high
+      - run: npm run check
+
+  framework:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-fund
+      - run: npm run check
+      - name: Compile and audit framework bundle
+        shell: powershell
+        run: |
+          ./scripts/package-framework.ps1
+          if (-not (Test-Path ./dist/portable-framework.zip)) { throw 'Framework archive was not created.' }
+          if (Get-ChildItem ./dist/framework -Recurse | Where-Object Name -in @('App','Data','portable.ini','portable-manifest.json')) { throw 'Protected content entered the framework archive.' }

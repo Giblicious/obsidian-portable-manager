@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+update-status.json
+App/
+Data/
+portable.ini
+portable-manifest.json
+.env
+.env.*
+!.env.example

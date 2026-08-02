@@ -1,8 +1,8 @@
 const { ButtonComponent, Modal, Notice, Platform, Plugin, requestUrl, setIcon } = require("obsidian");
-const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const { shell } = require("electron");
 const { compareVersions, findReleaseAsset, hostArchitecture, portablePaths, readPeMachine } = require("./core");
+const { isMaintenanceActive, launchMaintenance, maintenanceWaitPid, recoverMaintenanceStatus } = require("./maintenance");
 const EMBEDDED_MAINTENANCE_HELPER = require("../framework/Maintenance/PortableMaintenance.ps1");
 
 const OBSIDIAN_RELEASE_API = "https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest";
@@ -31,6 +31,17 @@ module.exports = class ObsidianPortableManager extends Plugin {
   readJson(filePath) {
     try { return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "")); }
     catch (_) { return null; }
+  }
+
+  writeJson(filePath, value) {
+    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+  }
+
+  getMaintenanceStatus(paths = this.getPaths()) {
+    const status = this.readJson(paths.statusPath);
+    const recovered = recoverMaintenanceStatus(status);
+    if (recovered && recovered !== status) this.writeJson(paths.statusPath, recovered);
+    return recovered;
   }
 
   ensureMaintenanceHelper() {
@@ -63,7 +74,7 @@ module.exports = class ObsidianPortableManager extends Plugin {
       frameworkVersion: String(manifest.frameworkVersion || "0.0.0"),
       architectureMatches: runtimeArchitecture === computerArchitecture,
       healthy: fs.existsSync(paths.appExe) && fs.existsSync(paths.dataPath) && fs.existsSync(helperPath) && fs.existsSync(paths.rootLauncher) && runtimeArchitecture === computerArchitecture,
-      updateStatus: this.readJson(paths.statusPath),
+      updateStatus: this.getMaintenanceStatus(paths),
     };
   }
 
@@ -85,21 +96,18 @@ module.exports = class ObsidianPortableManager extends Plugin {
     };
   }
 
-  scheduleMaintenance(kind) {
+  async scheduleMaintenance(kind) {
     this.ensureMaintenanceHelper();
     const local = this.getLocalStatus();
     if (!fs.existsSync(local.helperPath)) throw new Error("The portable maintenance helper is missing.");
-    const action = kind === "framework" ? "-InstallFramework" : "-InstallRuntime";
-    fs.writeFileSync(local.paths.statusPath, JSON.stringify({ state: "scheduled", scope: kind, message: `Preparing the ${kind} update.`, timestamp: new Date().toISOString() }, null, 2));
-    const processHandle = childProcess.spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", local.helperPath, action, "-WaitForPid", String(process.pid)], { detached: true, windowsHide: true, stdio: "ignore" });
-    processHandle.unref();
+    return launchMaintenance({ kind, helperPath: local.helperPath, statusPath: local.paths.statusPath, waitForPid: maintenanceWaitPid() });
   }
 
   openPath(targetPath) { void shell.openPath(targetPath); }
 
   reportMaintenanceResult() {
     const paths = this.getPaths();
-    const status = this.readJson(paths.statusPath);
+    const status = this.getMaintenanceStatus(paths);
     if (!status || !["completed", "failed"].includes(status.state)) return;
     new Notice(status.state === "completed" ? status.message : `Portable maintenance failed: ${status.message}`, status.state === "completed" ? 8000 : 12000);
     try { fs.unlinkSync(paths.statusPath); } catch (_) {}
@@ -107,7 +115,7 @@ module.exports = class ObsidianPortableManager extends Plugin {
 };
 
 class PortableManagerModal extends Modal {
-  constructor(app, plugin) { super(app); this.plugin = plugin; this.latest = null; this.pollTimer = null; }
+  constructor(app, plugin) { super(app); this.plugin = plugin; this.latest = null; this.pollTimer = null; this.starting = false; }
   async onOpen() { this.modalEl.addClass("opm-modal"); this.render(); await this.check(true); }
   onClose() { if (this.pollTimer) window.clearInterval(this.pollTimer); this.contentEl.empty(); }
 
@@ -127,10 +135,11 @@ class PortableManagerModal extends Modal {
     this.addStatus(grid, "Computer", local.computerArchitecture);
     this.addStatus(grid, "Framework", local.frameworkVersion);
 
+    const maintenanceActive = this.starting || isMaintenanceActive(local.updateStatus);
     this.runtimePanel = this.addUpdatePanel(contentEl, "Obsidian runtime", this.runtimeMessage(local));
-    this.addActions(this.runtimePanel, "runtime", this.latest && (compareVersions(this.latest.runtimeVersion, local.runtimeVersion) > 0 || !local.architectureMatches), local.architectureMatches ? "Prepare runtime update" : `Repair ${local.computerArchitecture} runtime`);
+    this.addActions(this.runtimePanel, "runtime", this.latest && (compareVersions(this.latest.runtimeVersion, local.runtimeVersion) > 0 || !local.architectureMatches), local.architectureMatches ? "Prepare runtime update" : `Repair ${local.computerArchitecture} runtime`, maintenanceActive);
     this.frameworkPanel = this.addUpdatePanel(contentEl, "Portable framework", this.frameworkMessage(local));
-    this.addActions(this.frameworkPanel, "framework", this.latest && compareVersions(this.latest.frameworkVersion, local.frameworkVersion) > 0, "Prepare framework update");
+    this.addActions(this.frameworkPanel, "framework", this.latest && compareVersions(this.latest.frameworkVersion, local.frameworkVersion) > 0, "Prepare framework update", maintenanceActive);
 
     const tools = contentEl.createDiv({ cls: "opm-tools" });
     new ButtonComponent(tools).setButtonText("Check again").setIcon("refresh-cw").onClick(() => this.check(false));
@@ -141,12 +150,26 @@ class PortableManagerModal extends Modal {
 
   addStatus(container, label, value) { const item = container.createDiv({ cls: "opm-stat" }); item.createDiv({ cls: "opm-stat-label", text: label }); item.createDiv({ cls: "opm-stat-value", text: value }); }
   addUpdatePanel(container, title, message) { const panel = container.createDiv({ cls: "opm-update-panel" }); panel.createEl("h3", { text: title }); panel.createEl("p", { text: message }); panel.createDiv({ cls: "opm-actions" }); return panel; }
-  addActions(panel, kind, available, label) { if (!available) return; new ButtonComponent(panel.querySelector(".opm-actions")).setButtonText(label).setIcon("download").setCta().onClick(() => this.prepare(kind)); }
+  addActions(panel, kind, available, label, disabled) { if (!available) return; new ButtonComponent(panel.querySelector(".opm-actions")).setButtonText(label).setIcon("download").setCta().setDisabled(disabled).onClick(() => this.prepare(kind)); }
   runtimeMessage(local) { if (!local.architectureMatches) return `The runtime is incompatible with this computer and needs a ${local.computerArchitecture} repair.`; if (!this.latest) return "Checking the official Obsidian release..."; return compareVersions(this.latest.runtimeVersion, local.runtimeVersion) > 0 ? `Runtime ${this.latest.runtimeVersion} is available; ${local.runtimeVersion} is installed.` : `Runtime ${local.runtimeVersion} is current.`; }
   frameworkMessage(local) { if (!this.latest) return "Checking the portable framework release..."; return compareVersions(this.latest.frameworkVersion, local.frameworkVersion) > 0 ? `Framework ${this.latest.frameworkVersion} is available; ${local.frameworkVersion} is installed.` : `Framework ${local.frameworkVersion} is current.`; }
 
   async check(silent) { try { this.latest = await this.plugin.latestStatus(); this.render(); if (!silent) new Notice("Portable update check completed."); } catch (error) { new Notice(`Update check failed: ${error.message}`, 10000); } }
-  prepare(kind) { try { this.plugin.scheduleMaintenance(kind); new Notice(`Preparing the ${kind} update in the background.`, 6000); this.showStatus({ state: "scheduled", scope: kind, message: `Preparing the ${kind} update...` }); this.startPolling(); } catch (error) { new Notice(`Could not start maintenance: ${error.message}`, 10000); } }
-  startPolling() { if (this.pollTimer) return; this.pollTimer = window.setInterval(() => { const status = this.plugin.readJson(this.plugin.getPaths().statusPath); if (!status) return; this.showStatus(status); if (["completed", "failed"].includes(status.state)) { window.clearInterval(this.pollTimer); this.pollTimer = null; } }, 1000); }
+  async prepare(kind) {
+    if (this.starting) return;
+    this.starting = true;
+    this.render();
+    try {
+      await this.plugin.scheduleMaintenance(kind);
+      new Notice(`The ${kind} update helper started.`, 6000);
+      this.startPolling();
+    } catch (error) {
+      new Notice(`Could not start maintenance: ${error.message}`, 10000);
+    } finally {
+      this.starting = false;
+      this.render();
+    }
+  }
+  startPolling() { if (this.pollTimer) return; this.pollTimer = window.setInterval(() => { const status = this.plugin.getMaintenanceStatus(); if (!status) return; this.showStatus(status); if (["completed", "failed"].includes(status.state)) { window.clearInterval(this.pollTimer); this.pollTimer = null; } }, 1000); }
   showStatus(status) { const panel = status.scope === "framework" ? this.frameworkPanel : this.runtimePanel; if (!panel) return; let box = panel.querySelector(".opm-state"); if (!box) box = panel.createDiv({ cls: "opm-state" }); box.toggleClass("is-failed", status.state === "failed"); box.setText(status.state === "ready" ? `${status.message} Close Obsidian normally to finish.` : status.message || status.state); }
 }

@@ -25,7 +25,7 @@ execFileSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"
 const required = ["main.js", "manifest.json", "styles.css", "versions.json", "README.md", "LICENSE", "SECURITY.md", "CHANGELOG.md", "framework/Maintenance/PortableMaintenance.ps1", "framework/Launcher/PortableLauncher.cs", "framework/Launcher/ObsidianPortable.ico", "third_party/7zip/7z.exe", "third_party/7zip/7z.dll", "third_party/7zip/LICENSE.txt", "third_party/7zip/SHA256SUMS"];
 for (const relative of required) if (!fs.existsSync(path.join(root, relative))) throw new Error(`Missing required release source: ${relative}`);
 
-const publicCode = ["src/main.js", "src/core.js", "main.js", "framework/Maintenance/PortableMaintenance.ps1", "framework/Launcher/PortableLauncher.cs", "scripts/package-framework.ps1"];
+const publicCode = ["src/main.js", "src/core.js", "src/maintenance.js", "main.js", "framework/Maintenance/PortableMaintenance.ps1", "framework/Launcher/PortableLauncher.cs", "scripts/package-framework.ps1"];
 const forbidden = [/\bTucker\b/i, /\bLauren\b/i, /[A-Z]:\\Users\\/i, /[A-Z]:\\(?:Tucker|Lauren)\\/i, /console\.(?:log|debug)\s*\(/, /-----BEGIN (?:RSA |OPENSSH )?PRIVATE KEY-----/];
 for (const relative of publicCode) {
   const source = read(relative);
@@ -33,6 +33,7 @@ for (const relative of publicCode) {
 }
 const helper = read("framework/Maintenance/PortableMaintenance.ps1");
 for (const safeguard of ["Assert-ChildPath", "Get-AuthenticodeSignature", "Get-FileHash", "App.previous", "Maintenance.previous", "Tools.previous", "Wait-ForPortableObsidian"]) if (!helper.includes(safeguard)) throw new Error(`Maintenance safeguard is missing: ${safeguard}`);
+for (const launchSafeguard of ["'checking'", '".$PID.new"', "processId = $PID", "[switch]$Bootstrap", "Start-Process"]) if (!helper.includes(launchSafeguard)) throw new Error(`Maintenance launch safeguard is missing: ${launchSafeguard}`);
 for (const protectedName of ["'App'", "'Data'", "'portable.ini'", "'portable-manifest.json'"]) if (!helper.includes(protectedName)) throw new Error(`Framework protected-content check is missing: ${protectedName}`);
 const launcher = read("framework/Launcher/PortableLauncher.cs");
 if (!launcher.includes("UseShellExecute = true") || !launcher.includes("ReadPeMachine") || !launcher.includes("ResolveUnderRoot")) throw new Error("Launcher portability, architecture, or detached-process safeguards are missing");
@@ -47,8 +48,10 @@ walk(root);
 for (const relative of trackedCandidates) if (/Obsidian\.exe$/i.test(relative)) throw new Error(`Official Obsidian runtime must not be distributed: ${relative}`);
 
 if (process.platform === "win32") {
-  const helperPath = path.join(root, "framework/Maintenance/PortableMaintenance.ps1").replaceAll("'", "''");
-  const command = `$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile('${helperPath}',[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{Write-Error $_.Message};exit 1}`;
-  execFileSync("powershell.exe", ["-NoProfile", "-Command", command], { stdio: "inherit" });
+  for (const relative of ["framework/Maintenance/PortableMaintenance.ps1", "test/fixtures/Handshake.ps1"]) {
+    const helperPath = path.join(root, relative).replaceAll("'", "''");
+    const command = `$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile('${helperPath}',[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{Write-Error $_.Message};exit 1}`;
+    execFileSync("powershell.exe", ["-NoProfile", "-Command", command], { stdio: "inherit" });
+  }
 }
 console.log(`Obsidian Portable Manager ${manifest.version} passed build, tests, manifests, path safeguards, dependency pins, and public-content audit.`);

@@ -1,9 +1,10 @@
-# FrameworkHelperVersion: 1.3.0
+# FrameworkHelperVersion: 1.3.1
 param(
     [switch]$CheckOnly,
     [Alias('InstallLatest')][switch]$InstallRuntime,
     [switch]$InstallFramework,
-    [int]$WaitForPid = 0
+    [int]$WaitForPid = 0,
+    [switch]$Bootstrap
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,8 +43,8 @@ function Remove-ChildItem([string]$Parent, [string]$Candidate) {
 
 function Save-Status([string]$State, [string]$Scope, [string]$Message, [string]$Version = '') {
     if (-not $script:StatusPath) { return }
-    $temporary = $script:StatusPath + '.new'
-    [ordered]@{ state = $State; scope = $Scope; message = $Message; version = $Version; timestamp = (Get-Date).ToString('o') } |
+    $temporary = $script:StatusPath + ".$PID.new"
+    [ordered]@{ state = $State; scope = $Scope; message = $Message; version = $Version; processId = $PID; timestamp = (Get-Date).ToString('o') } |
         ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
     Move-Item -LiteralPath $temporary -Destination $script:StatusPath -Force
 }
@@ -277,6 +278,17 @@ try {
     if (-not $script:Manifest) { $script:Manifest = New-Object PSObject }
 
     if (-not $InstallRuntime -and -not $InstallFramework -and -not $CheckOnly) { throw 'Specify -InstallRuntime, -InstallFramework, or -CheckOnly.' }
+    if ($Bootstrap) {
+        $action = if ($InstallFramework) { '-InstallFramework' } else { '-InstallRuntime' }
+        $quotedScript = '"' + $PSCommandPath + '"'
+        $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $quotedScript, $action, '-WaitForPid', [string]$WaitForPid)
+        Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $arguments -WindowStyle Hidden | Out-Null
+        exit 0
+    }
+    if (-not $CheckOnly) {
+        $scope = if ($InstallFramework) { 'framework' } else { 'runtime' }
+        Save-Status 'checking' $scope 'Checking trusted release metadata.'
+    }
     if ($CheckOnly) { Install-ObsidianRuntime; Install-PortableFramework }
     elseif ($InstallFramework) { Install-PortableFramework }
     else { Install-ObsidianRuntime }

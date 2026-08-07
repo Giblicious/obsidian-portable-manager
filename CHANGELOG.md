@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3
+
+- Increased the acknowledged PowerShell cold-start allowance from 15 to 60
+  seconds so heavily loaded or slower Windows computers do not report a false
+  launch failure while the detached helper is still starting.
+
 ## 1.3.2
 
 - Added a guided first-run flow that turns any fresh BRAT vault into a complete

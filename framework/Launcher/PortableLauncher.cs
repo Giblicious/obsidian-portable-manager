@@ -11,8 +11,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Giblicious")]
 [assembly: AssemblyProduct("Obsidian Portable Launcher")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Giblicious")]
-[assembly: AssemblyVersion("1.3.2.0")]
-[assembly: AssemblyFileVersion("1.3.2.0")]
+[assembly: AssemblyVersion("1.3.3.0")]
+[assembly: AssemblyFileVersion("1.3.3.0")]
 
 internal static class PortableLauncher
 {

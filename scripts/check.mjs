@@ -22,10 +22,10 @@ execFileSync(process.execPath, [path.join(root, "scripts/build.mjs")], { stdio: 
 execFileSync(process.execPath, ["--check", path.join(root, "main.js")], { stdio: "inherit" });
 execFileSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"), "run"], { cwd: root, stdio: "inherit" });
 
-const required = ["main.js", "manifest.json", "styles.css", "versions.json", "README.md", "LICENSE", "SECURITY.md", "CHANGELOG.md", "framework/Maintenance/PortableMaintenance.ps1", "framework/Launcher/PortableLauncher.cs", "framework/Launcher/ObsidianPortable.ico", "third_party/7zip/7z.exe", "third_party/7zip/7z.dll", "third_party/7zip/LICENSE.txt", "third_party/7zip/SHA256SUMS"];
+const required = ["main.js", "manifest.json", "styles.css", "versions.json", "README.md", "LICENSE", "SECURITY.md", "CHANGELOG.md", "framework/Maintenance/PortableMaintenance.ps1", "framework/Maintenance/PortableBootstrap.ps1", "framework/Launcher/PortableLauncher.cs", "framework/Launcher/ObsidianPortable.ico", "scripts/smoke-launcher.ps1", "third_party/7zip/7z.exe", "third_party/7zip/7z.dll", "third_party/7zip/LICENSE.txt", "third_party/7zip/SHA256SUMS"];
 for (const relative of required) if (!fs.existsSync(path.join(root, relative))) throw new Error(`Missing required release source: ${relative}`);
 
-const publicCode = ["src/main.js", "src/core.js", "src/maintenance.js", "main.js", "framework/Maintenance/PortableMaintenance.ps1", "framework/Launcher/PortableLauncher.cs", "scripts/package-framework.ps1"];
+const publicCode = ["src/main.js", "src/core.js", "src/maintenance.js", "main.js", "framework/Maintenance/PortableMaintenance.ps1", "framework/Maintenance/PortableBootstrap.ps1", "framework/Launcher/PortableLauncher.cs", "scripts/package-framework.ps1"];
 const forbidden = [/\bTucker\b/i, /\bLauren\b/i, /[A-Z]:\\Users\\/i, /[A-Z]:\\(?:Tucker|Lauren)\\/i, /console\.(?:log|debug)\s*\(/, /-----BEGIN (?:RSA |OPENSSH )?PRIVATE KEY-----/];
 for (const relative of publicCode) {
   const source = read(relative);
@@ -34,9 +34,13 @@ for (const relative of publicCode) {
 const helper = read("framework/Maintenance/PortableMaintenance.ps1");
 for (const safeguard of ["Assert-ChildPath", "Get-AuthenticodeSignature", "Get-FileHash", "App.previous", "Maintenance.previous", "Tools.previous", "Wait-ForPortableObsidian"]) if (!helper.includes(safeguard)) throw new Error(`Maintenance safeguard is missing: ${safeguard}`);
 for (const launchSafeguard of ["'checking'", '".$PID.new"', "processId = $PID", "[switch]$Bootstrap", "Start-Process"]) if (!helper.includes(launchSafeguard)) throw new Error(`Maintenance launch safeguard is missing: ${launchSafeguard}`);
+const bootstrap = read("framework/Maintenance/PortableBootstrap.ps1");
+for (const safeguard of ["Assert-SeparatePaths", "Get-FileHash", ".opm-staging-$PID", ".opm-created-by-bootstrap", "Wait-Process", "portable-automatic", "PortableMaintenance.ps1", "Show-ProgressWindow"]) if (!bootstrap.includes(safeguard)) throw new Error(`Bootstrap safeguard is missing: ${safeguard}`);
 for (const protectedName of ["'App'", "'Data'", "'portable.ini'", "'portable-manifest.json'"]) if (!helper.includes(protectedName)) throw new Error(`Framework protected-content check is missing: ${protectedName}`);
 const launcher = read("framework/Launcher/PortableLauncher.cs");
-if (!launcher.includes("UseShellExecute = true") || !launcher.includes("ReadPeMachine") || !launcher.includes("ResolveUnderRoot")) throw new Error("Launcher portability, architecture, or detached-process safeguards are missing");
+if (!launcher.includes("UseShellExecute = true") || !launcher.includes("ReadPeMachine") || !launcher.includes("ResolveUnderRoot") || !launcher.includes('root.Remove("updateDisabled")')) throw new Error("Launcher portability, updater, architecture, or detached-process safeguards are missing");
+const pluginSource = read("src/main.js");
+for (const experience of ["EMBEDDED_BOOTSTRAP_HELPER", "maybeScheduleAutomaticMaintenance", 'startBootstrap("Setup")', 'startBootstrap("Transfer")', "updateAndRestart", "requestQuit"]) if (!pluginSource.includes(experience)) throw new Error(`One-click experience safeguard is missing: ${experience}`);
 
 const sums = new Map(read("third_party/7zip/SHA256SUMS").trim().split(/\r?\n/).map((line) => { const [hash, name] = line.trim().split(/\s+/, 2); return [name, hash.toUpperCase()]; }));
 const crypto = await import("node:crypto");
@@ -48,7 +52,7 @@ walk(root);
 for (const relative of trackedCandidates) if (/Obsidian\.exe$/i.test(relative)) throw new Error(`Official Obsidian runtime must not be distributed: ${relative}`);
 
 if (process.platform === "win32") {
-  for (const relative of ["framework/Maintenance/PortableMaintenance.ps1", "test/fixtures/Handshake.ps1"]) {
+  for (const relative of ["framework/Maintenance/PortableMaintenance.ps1", "framework/Maintenance/PortableBootstrap.ps1", "test/fixtures/Handshake.ps1"]) {
     const helperPath = path.join(root, relative).replaceAll("'", "''");
     const command = `$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile('${helperPath}',[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{Write-Error $_.Message};exit 1}`;
     execFileSync("powershell.exe", ["-NoProfile", "-Command", command], { stdio: "inherit" });

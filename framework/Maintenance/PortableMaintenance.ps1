@@ -1,9 +1,11 @@
-# FrameworkHelperVersion: 1.3.1
+# FrameworkHelperVersion: 1.3.2
 param(
     [switch]$CheckOnly,
     [Alias('InstallLatest')][switch]$InstallRuntime,
     [switch]$InstallFramework,
+    [switch]$InstallAll,
     [int]$WaitForPid = 0,
+    [switch]$RestartAfter,
     [switch]$Bootstrap
 )
 
@@ -11,6 +13,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $FrameworkRepository = 'Giblicious/obsidian-portable-manager'
 $ObsidianRepository = 'obsidianmd/obsidian-releases'
+$script:ProgressForm = $null
+$script:ProgressLabel = $null
 
 function Read-PortableConfig([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { throw "Portable configuration is missing: $Path" }
@@ -47,6 +51,41 @@ function Save-Status([string]$State, [string]$Scope, [string]$Message, [string]$
     [ordered]@{ state = $State; scope = $Scope; message = $Message; version = $Version; processId = $PID; timestamp = (Get-Date).ToString('o') } |
         ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
     Move-Item -LiteralPath $temporary -Destination $script:StatusPath -Force
+    if ($script:ProgressLabel) {
+        $script:ProgressLabel.Text = $Message
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+}
+
+function Show-ProgressWindow {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $script:ProgressForm = New-Object System.Windows.Forms.Form
+    $script:ProgressForm.Text = 'Obsidian Portable Manager'
+    $script:ProgressForm.Width = 460
+    $script:ProgressForm.Height = 170
+    $script:ProgressForm.StartPosition = 'CenterScreen'
+    $script:ProgressForm.FormBorderStyle = 'FixedDialog'
+    $script:ProgressForm.MaximizeBox = $false
+    $script:ProgressForm.MinimizeBox = $false
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text = 'Updating Obsidian Portable'
+    $title.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $title.SetBounds(22, 18, 400, 28)
+    $script:ProgressLabel = New-Object System.Windows.Forms.Label
+    $script:ProgressLabel.Text = 'Preparing...'
+    $script:ProgressLabel.SetBounds(22, 53, 400, 30)
+    $progress = New-Object System.Windows.Forms.ProgressBar
+    $progress.Style = 'Marquee'
+    $progress.MarqueeAnimationSpeed = 30
+    $progress.SetBounds(22, 91, 400, 16)
+    $script:ProgressForm.Controls.AddRange(@($title, $script:ProgressLabel, $progress))
+    $script:ProgressForm.Show()
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Close-ProgressWindow {
+    if ($script:ProgressForm) { $script:ProgressForm.Close(); $script:ProgressForm.Dispose(); $script:ProgressForm = $null; $script:ProgressLabel = $null }
 }
 
 function Get-JsonFile([string]$Path) {
@@ -111,7 +150,7 @@ function Install-ObsidianRuntime {
     $release = Get-Release $ObsidianRepository
     $latestText = ([string]$release.tag_name).TrimStart('v')
     $latestVersion = [version]$latestText
-    $currentText = (Get-Item -LiteralPath $script:AppExe).VersionInfo.ProductVersion
+    $currentText = if (Test-Path -LiteralPath $script:AppExe) { (Get-Item -LiteralPath $script:AppExe).VersionInfo.ProductVersion } else { '0.0.0' }
     $currentVersion = [version]$currentText
 
     switch ($env:PROCESSOR_ARCHITECTURE.ToUpperInvariant()) {
@@ -121,7 +160,7 @@ function Install-ObsidianRuntime {
         default { throw "Unsupported Windows architecture: $env:PROCESSOR_ARCHITECTURE" }
     }
 
-    $architectureMismatch = (Get-PeMachineCode $script:AppExe) -ne $expectedMachine
+    $architectureMismatch = -not (Test-Path -LiteralPath $script:AppExe) -or (Get-PeMachineCode $script:AppExe) -ne $expectedMachine
     if ($CheckOnly) {
         Write-Host "Installed runtime: $currentText"
         Write-Host "Latest public release: $latestText"
@@ -166,11 +205,11 @@ function Install-ObsidianRuntime {
 
     $previous = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'App.previous')
     Remove-ChildItem $script:PortableRoot $previous
-    Move-Item -LiteralPath $script:AppDir -Destination $previous
+    if (Test-Path -LiteralPath $script:AppDir) { Move-Item -LiteralPath $script:AppDir -Destination $previous }
     try { Move-Item -LiteralPath $stage -Destination $script:AppDir }
     catch { if (-not (Test-Path -LiteralPath $script:AppDir) -and (Test-Path -LiteralPath $previous)) { Move-Item -LiteralPath $previous -Destination $script:AppDir }; throw }
 
-    Set-ManifestValue $script:Manifest 'layoutVersion' 2
+    Set-ManifestValue $script:Manifest 'layoutVersion' 3
     Set-ManifestValue $script:Manifest 'installedRuntime' $latestText
     Set-ManifestValue $script:Manifest 'installedArchitecture' $architectureName
     Set-ManifestValue $script:Manifest 'installedAt' (Get-Date).ToString('o')
@@ -221,17 +260,17 @@ function Install-PortableFramework {
     if ((Get-Item -LiteralPath $newLauncher).VersionInfo.FileVersion -ne "${latestText}.0") { throw 'Launcher version does not match the framework release.' }
     Wait-ForPortableObsidian $scope $latestText
 
-    $launcher = Join-Path $script:DriveRoot 'Obsidian Portable.exe'
-    $launcherPrevious = Join-Path $script:DriveRoot 'Obsidian Portable.previous.exe'
-    $launcherNew = Join-Path $script:DriveRoot 'Obsidian Portable.new.exe'
-    foreach ($rootFile in @($launcher, $launcherPrevious, $launcherNew)) { [void](Assert-ChildPath $script:DriveRoot $rootFile) }
+    $launcher = Join-Path $script:PackageRoot 'Obsidian Portable.exe'
+    $launcherPrevious = Join-Path $script:PackageRoot 'Obsidian Portable.previous.exe'
+    $launcherNew = Join-Path $script:PackageRoot 'Obsidian Portable.new.exe'
+    foreach ($rootFile in @($launcher, $launcherPrevious, $launcherNew)) { [void](Assert-ChildPath $script:PackageRoot $rootFile) }
     $maintenance = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Maintenance')
     $maintenancePrevious = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Maintenance.previous')
     $maintenanceNew = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Maintenance.new')
     $tools = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Tools')
     $toolsPrevious = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Tools.previous')
     $toolsNew = Assert-ChildPath $script:PortableRoot (Join-Path $script:PortableRoot 'Tools.new')
-    Remove-ChildItem $script:DriveRoot $launcherNew; Remove-ChildItem $script:DriveRoot $launcherPrevious
+    Remove-ChildItem $script:PackageRoot $launcherNew; Remove-ChildItem $script:PackageRoot $launcherPrevious
     Remove-ChildItem $script:PortableRoot $maintenanceNew; Remove-ChildItem $script:PortableRoot $maintenancePrevious
     Remove-ChildItem $script:PortableRoot $toolsNew; Remove-ChildItem $script:PortableRoot $toolsPrevious
     Copy-Item -LiteralPath $newLauncher -Destination $launcherNew
@@ -254,7 +293,7 @@ function Install-PortableFramework {
         throw
     }
 
-    Set-ManifestValue $script:Manifest 'layoutVersion' 2
+    Set-ManifestValue $script:Manifest 'layoutVersion' 3
     Set-ManifestValue $script:Manifest 'frameworkVersion' $latestText
     Set-ManifestValue $script:Manifest 'frameworkUpdatedAt' (Get-Date).ToString('o')
     Set-ManifestValue $script:Manifest 'frameworkSource' ([string]$release.html_url)
@@ -265,38 +304,43 @@ function Install-PortableFramework {
 
 try {
     $script:PortableRoot = Split-Path -Parent $PSScriptRoot
-    $script:DriveRoot = [IO.Path]::GetPathRoot($script:PortableRoot)
+    $script:PackageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $script:PortableRoot))
     $script:StatusPath = Join-Path $script:PortableRoot 'update-status.json'
     $script:Config = Read-PortableConfig (Join-Path $script:PortableRoot 'portable.ini')
-    $script:AppExe = [IO.Path]::GetFullPath((Join-Path $script:DriveRoot $script:Config.App))
+    $script:AppExe = [IO.Path]::GetFullPath((Join-Path $script:PackageRoot $script:Config.App))
     $script:AppDir = Assert-ChildPath $script:PortableRoot (Split-Path -Parent $script:AppExe)
-    if (-not (Test-Path -LiteralPath $script:AppExe)) { throw "Current Obsidian runtime not found: $script:AppExe" }
     $script:ManifestPath = Join-Path $script:PortableRoot 'portable-manifest.json'
     $legacyManifestPath = Join-Path $script:PortableRoot 'manifest.json'
     $script:Manifest = Get-JsonFile $script:ManifestPath
     if (-not $script:Manifest) { $script:Manifest = Get-JsonFile $legacyManifestPath }
     if (-not $script:Manifest) { $script:Manifest = New-Object PSObject }
 
-    if (-not $InstallRuntime -and -not $InstallFramework -and -not $CheckOnly) { throw 'Specify -InstallRuntime, -InstallFramework, or -CheckOnly.' }
+    if (-not $InstallRuntime -and -not $InstallFramework -and -not $InstallAll -and -not $CheckOnly) { throw 'Specify -InstallRuntime, -InstallFramework, -InstallAll, or -CheckOnly.' }
     if ($Bootstrap) {
-        $action = if ($InstallFramework) { '-InstallFramework' } else { '-InstallRuntime' }
+        $action = if ($InstallAll) { '-InstallAll' } elseif ($InstallFramework) { '-InstallFramework' } else { '-InstallRuntime' }
         $quotedScript = '"' + $PSCommandPath + '"'
         $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $quotedScript, $action, '-WaitForPid', [string]$WaitForPid)
+        if ($RestartAfter) { $arguments += '-RestartAfter' }
         Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $arguments -WindowStyle Hidden | Out-Null
         exit 0
     }
+    if ($RestartAfter) { Show-ProgressWindow }
     if (-not $CheckOnly) {
-        $scope = if ($InstallFramework) { 'framework' } else { 'runtime' }
+        $scope = if ($InstallAll) { 'all' } elseif ($InstallFramework) { 'framework' } else { 'runtime' }
         Save-Status 'checking' $scope 'Checking trusted release metadata.'
     }
     if ($CheckOnly) { Install-ObsidianRuntime; Install-PortableFramework }
+    elseif ($InstallAll) { Install-PortableFramework; Install-ObsidianRuntime }
     elseif ($InstallFramework) { Install-PortableFramework }
     else { Install-ObsidianRuntime }
+    if ($RestartAfter) { Close-ProgressWindow; Start-Process -FilePath (Join-Path $script:PackageRoot 'Obsidian Portable.exe') | Out-Null }
     exit 0
 }
 catch {
-    $scope = if ($InstallFramework) { 'framework' } else { 'runtime' }
+    Close-ProgressWindow
+    $scope = if ($InstallAll) { 'all' } elseif ($InstallFramework) { 'framework' } else { 'runtime' }
     Save-Status 'failed' $scope $_.Exception.Message
+    if ($RestartAfter) { Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Obsidian Portable Manager', 'OK', 'Error') | Out-Null }
     Write-Error $_.Exception.Message
     exit 1
 }

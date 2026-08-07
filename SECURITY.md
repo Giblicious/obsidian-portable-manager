@@ -19,6 +19,14 @@ display plugin:
   `Maintenance`, and `Tools`.
 - Changes are staged before Obsidian closes. Existing components are retained
   until the replacement validates, and failed swaps are rolled back.
+- Setup and transfer destinations must be separate from both the source vault
+  and source package. New packages are assembled in a PID-unique sibling
+  staging directory and moved into place only after the copy and framework
+  validation succeed.
+- Setup copies the source vault after Obsidian closes, then installs the latest
+  official signed runtime. Transfer copies only the managed app/profile and
+  vault boundaries, refreshes the checksum-verified framework, validates the
+  runtime, and repairs the destination vault registry on launch.
 
 The launcher in the initial public release is not Authenticode-signed. Its
 release checksum protects against corruption but does not replace code-signing

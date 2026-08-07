@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const {
   isMaintenanceActive,
+  isProcessRunning,
   launchMaintenance,
+  launchPortableOperation,
   maintenanceWaitPid,
   recoverMaintenanceStatus,
   resolvePowerShellPath,
@@ -91,6 +93,54 @@ describe("maintenance launch handshake", () => {
     expect(child.unreferenced).toBe(true);
   });
 
+  it("keeps a prepared update active while its helper is alive", () => {
+    const now = Date.parse("2026-08-03T12:00:00Z");
+    const status = { state: "ready", scope: "all", processId: 42, timestamp: "2026-08-02T12:00:00Z" };
+    expect(recoverMaintenanceStatus(status, now, () => true)).toBe(status);
+    expect(recoverMaintenanceStatus(status, now, () => false)).toMatchObject({ state: "failed" });
+    expect(isProcessRunning(42, () => {})).toBe(true);
+  });
+
+  it("passes setup paths as separate process arguments", async () => {
+    const statusPath = statusFixture();
+    const child = childFixture();
+    let invocation;
+    const promise = launchPortableOperation({
+      scope: "setup", scriptPath: "C:\\Temp\\PortableBootstrap.ps1", statusPath,
+      scriptArguments: ["-Operation", "Setup", "-TargetRoot", "X:\\Obsidian Portable", "-Bootstrap"], fsApi: fs,
+      spawn: (...args) => {
+        invocation = args;
+        queueMicrotask(() => {
+          child.emit("spawn");
+          fs.writeFileSync(statusPath, JSON.stringify({ state: "checking", scope: "setup", processId: 9000, timestamp: new Date().toISOString() }));
+        });
+        return child;
+      },
+      launchTimeoutMs: 500,
+    });
+    await expect(promise).resolves.toEqual({ processId: 9000 });
+    expect(invocation[1]).toContain("X:\\Obsidian Portable");
+    expect(invocation[1]).toContain("-Bootstrap");
+  });
+
+  it("waits for setup preflight before acknowledging a close", async () => {
+    const statusPath = statusFixture();
+    const child = childFixture();
+    const promise = launchPortableOperation({
+      scope: "setup", scriptPath: "bootstrap.ps1", statusPath, scriptArguments: ["-Probe"], fsApi: fs,
+      acknowledgeStates: ["ready"], launchTimeoutMs: 500,
+      spawn: () => {
+        queueMicrotask(() => {
+          child.emit("spawn");
+          fs.writeFileSync(statusPath, JSON.stringify({ state: "checking", scope: "setup", processId: 9000, timestamp: new Date().toISOString() }));
+          setTimeout(() => fs.writeFileSync(statusPath, JSON.stringify({ state: "ready", scope: "setup", processId: 9000, timestamp: new Date().toISOString() })), 30);
+        });
+        return child;
+      },
+    });
+    await expect(promise).resolves.toEqual({ processId: 9000 });
+  });
+
   it("preserves an immediate checking update from the helper", async () => {
     const statusPath = statusFixture();
     const child = childFixture();
@@ -150,7 +200,7 @@ describe("maintenance launch handshake", () => {
     const helperPath = path.join(maintenanceDirectory, "Handshake.ps1");
     fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "Handshake.ps1"), helperPath);
 
-    await launchMaintenance({ kind: "runtime", helperPath, statusPath, waitForPid: 0, fsApi: fs, launchTimeoutMs: 5000 });
+    await launchMaintenance({ kind: "runtime", helperPath, statusPath, waitForPid: 0, fsApi: fs, launchTimeoutMs: 15000 });
     const deadline = Date.now() + 5000;
     let status;
     while (Date.now() < deadline) {
@@ -159,7 +209,29 @@ describe("maintenance launch handshake", () => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     expect(status).toMatchObject({ state: "completed", scope: "runtime", message: "Integration helper completed." });
-  }, 10_000);
+  }, 30_000);
+
+  it.skipIf(process.platform !== "win32")("launches the real detached setup bootstrap", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "opm-bootstrap-probe-"));
+    temporaryDirectories.push(directory);
+    const spacedDirectory = path.join(directory, "Portable setup's files");
+    fs.mkdirSync(spacedDirectory);
+    const scriptPath = path.join(spacedDirectory, "PortableBootstrap.ps1");
+    const statusPath = path.join(spacedDirectory, "operation-status.json");
+    fs.copyFileSync(path.join(import.meta.dirname, "..", "framework", "Maintenance", "PortableBootstrap.ps1"), scriptPath);
+    await launchPortableOperation({
+      scope: "setup", scriptPath, statusPath, fsApi: fs, launchTimeoutMs: 15000,
+      scriptArguments: ["-Operation", "Setup", "-TargetRoot", path.join(directory, "target with spaces"), "-SourceVault", path.join(directory, "source's vault"), "-StatusPath", statusPath, "-WaitForPid", "0", "-Bootstrap", "-Probe"],
+    });
+    const deadline = Date.now() + 15000;
+    let status;
+    while (Date.now() < deadline) {
+      try { status = JSON.parse(fs.readFileSync(statusPath, "utf8").replace(/^\uFEFF/, "")); } catch (_) {}
+      if (["completed", "failed"].includes(status?.state)) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    expect(status).toMatchObject({ state: "completed", message: "Bootstrap probe completed." });
+  }, 30_000);
 
   it.skipIf(process.platform !== "win32")("keeps the helper alive after its Node parent exits", async () => {
     const portableRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opm-parent-exit-"));

@@ -37,7 +37,7 @@ function childFixture(pid = 4242) {
 
 describe("maintenance status recovery", () => {
   it("releases a launch that never advances", () => {
-    const now = Date.parse("2026-08-02T12:00:30Z");
+    const now = Date.parse("2026-08-02T12:02:00Z");
     const status = { state: "scheduled", scope: "runtime", timestamp: "2026-08-02T12:00:00Z" };
     const recovered = recoverMaintenanceStatus(status, now);
     expect(recovered.state).toBe("failed");
@@ -200,7 +200,7 @@ describe("maintenance launch handshake", () => {
     const helperPath = path.join(maintenanceDirectory, "Handshake.ps1");
     fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "Handshake.ps1"), helperPath);
 
-    await launchMaintenance({ kind: "runtime", helperPath, statusPath, waitForPid: 0, fsApi: fs, launchTimeoutMs: 15000 });
+    await launchMaintenance({ kind: "runtime", helperPath, statusPath, waitForPid: 0, fsApi: fs, launchTimeoutMs: 60000 });
     const deadline = Date.now() + 5000;
     let status;
     while (Date.now() < deadline) {
@@ -209,7 +209,7 @@ describe("maintenance launch handshake", () => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     expect(status).toMatchObject({ state: "completed", scope: "runtime", message: "Integration helper completed." });
-  }, 30_000);
+  }, 75_000);
 
   it.skipIf(process.platform !== "win32")("launches the real detached setup bootstrap", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "opm-bootstrap-probe-"));
@@ -220,10 +220,10 @@ describe("maintenance launch handshake", () => {
     const statusPath = path.join(spacedDirectory, "operation-status.json");
     fs.copyFileSync(path.join(import.meta.dirname, "..", "framework", "Maintenance", "PortableBootstrap.ps1"), scriptPath);
     await launchPortableOperation({
-      scope: "setup", scriptPath, statusPath, fsApi: fs, launchTimeoutMs: 15000,
+      scope: "setup", scriptPath, statusPath, fsApi: fs, launchTimeoutMs: 60000,
       scriptArguments: ["-Operation", "Setup", "-TargetRoot", path.join(directory, "target with spaces"), "-SourceVault", path.join(directory, "source's vault"), "-StatusPath", statusPath, "-WaitForPid", "0", "-Bootstrap", "-Probe"],
     });
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + 60000;
     let status;
     while (Date.now() < deadline) {
       try { status = JSON.parse(fs.readFileSync(statusPath, "utf8").replace(/^\uFEFF/, "")); } catch (_) {}
@@ -231,7 +231,7 @@ describe("maintenance launch handshake", () => {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     expect(status).toMatchObject({ state: "completed", message: "Bootstrap probe completed." });
-  }, 30_000);
+  }, 75_000);
 
   it.skipIf(process.platform !== "win32")("keeps the helper alive after its Node parent exits", async () => {
     const portableRoot = fs.mkdtempSync(path.join(os.tmpdir(), "opm-parent-exit-"));

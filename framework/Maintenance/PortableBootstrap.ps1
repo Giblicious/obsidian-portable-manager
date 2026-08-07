@@ -1,4 +1,4 @@
-# FrameworkBootstrapVersion: 1.3.2
+# FrameworkBootstrapVersion: 1.3.3
 param(
     [ValidateSet('Setup', 'Transfer')][string]$Operation,
     [string]$TargetRoot,

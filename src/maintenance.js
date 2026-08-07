@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ACTIVE_STATES = new Set(["scheduled", "launching", "checking", "downloading", "copying", "ready", "installing"]);
-const LAUNCH_TIMEOUT_MS = 15_000;
+const LAUNCH_TIMEOUT_MS = 60_000;
 const OPERATION_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 function isProcessRunning(processId, probe = process.kill) {

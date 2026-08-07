@@ -19,6 +19,7 @@ if ($LASTEXITCODE -ne 0) { throw "Launcher compilation failed with exit code $LA
 
 Copy-Item -LiteralPath (Join-Path $root 'framework\framework-manifest.json') -Destination (Join-Path $bundle 'framework-manifest.json')
 Copy-Item -LiteralPath (Join-Path $root 'framework\Maintenance\PortableMaintenance.ps1') -Destination (Join-Path $package 'Maintenance\PortableMaintenance.ps1')
+Copy-Item -LiteralPath (Join-Path $root 'framework\Maintenance\PortableBootstrap.ps1') -Destination (Join-Path $package 'Maintenance\PortableBootstrap.ps1')
 Copy-Item -LiteralPath $launcherSource -Destination (Join-Path $package 'Maintenance\Source\PortableLauncher.cs')
 Copy-Item -LiteralPath $launcherIcon -Destination (Join-Path $package 'Maintenance\Source\ObsidianPortable.ico')
 Copy-Item -LiteralPath (Join-Path $root 'third_party\7zip\7z.exe') -Destination (Join-Path $package 'Tools\7z.exe')
@@ -27,6 +28,7 @@ Copy-Item -LiteralPath (Join-Path $root 'third_party\7zip\LICENSE.txt') -Destina
 
 $frameworkVersion = (Get-Content -LiteralPath (Join-Path $root 'framework\framework-manifest.json') -Raw | ConvertFrom-Json).frameworkVersion
 if ((Get-Item -LiteralPath $launcherOutput).VersionInfo.FileVersion -ne "${frameworkVersion}.0") { throw 'Compiled launcher version does not match the framework manifest.' }
+& (Join-Path $root 'scripts\smoke-launcher.ps1') -FrameworkDirectory $bundle
 $archive = Join-Path $output 'portable-framework.zip'
 Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $archive -CompressionLevel Optimal
 $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()

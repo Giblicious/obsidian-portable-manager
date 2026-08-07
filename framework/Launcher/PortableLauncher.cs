@@ -11,8 +11,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Giblicious")]
 [assembly: AssemblyProduct("Obsidian Portable Launcher")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Giblicious")]
-[assembly: AssemblyVersion("1.3.1.0")]
-[assembly: AssemblyFileVersion("1.3.1.0")]
+[assembly: AssemblyVersion("1.3.2.0")]
+[assembly: AssemblyFileVersion("1.3.2.0")]
 
 internal static class PortableLauncher
 {
@@ -25,12 +25,11 @@ internal static class PortableLauncher
         Application.SetCompatibleTextRenderingDefault(false);
         try
         {
-            string driveRoot = Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory);
-            if (String.IsNullOrEmpty(driveRoot)) throw new InvalidOperationException("The portable drive root could not be determined.");
-            Dictionary<string, string> config = ReadConfig(Path.Combine(driveRoot, ConfigRelativePath));
-            string appExe = ResolveUnderRoot(driveRoot, Require(config, "App"));
-            string dataDir = ResolveUnderRoot(driveRoot, Require(config, "Data"));
-            string vaultDir = ResolveUnderRoot(driveRoot, Require(config, "Vault"));
+            string packageRoot = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+            Dictionary<string, string> config = ReadConfig(Path.Combine(packageRoot, ConfigRelativePath));
+            string appExe = ResolveUnderRoot(packageRoot, Require(config, "App"));
+            string dataDir = ResolveUnderRoot(packageRoot, Require(config, "Data"));
+            string vaultDir = ResolveUnderRoot(packageRoot, Require(config, "Vault"));
             string vaultId = Require(config, "VaultId");
             ValidateLayout(appExe, vaultDir, vaultId);
 
@@ -50,7 +49,7 @@ internal static class PortableLauncher
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message + "\r\n\r\nSee README - Obsidian Portable.txt on the flash drive.", "Obsidian Portable could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message + "\r\n\r\nThe package was left unchanged. Open Obsidian Portable Manager from the original vault to repair or recreate it.", "Obsidian Portable could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -80,10 +79,10 @@ internal static class PortableLauncher
 
     private static string ResolveUnderRoot(string root, string relative)
     {
-        if (Path.IsPathRooted(relative)) throw new InvalidDataException("portable.ini paths must be drive-relative: " + relative);
+        if (Path.IsPathRooted(relative)) throw new InvalidDataException("portable.ini paths must be package-relative: " + relative);
         string fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         string fullPath = Path.GetFullPath(Path.Combine(root, relative));
-        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A portable.ini path points outside the flash drive: " + relative);
+        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("A portable.ini path points outside the portable package: " + relative);
         return fullPath;
     }
 
@@ -121,6 +120,7 @@ internal static class PortableLauncher
         }
         Dictionary<string, object> entry = new Dictionary<string, object>(); entry["path"] = vaultDir; entry["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); entry["open"] = true;
         Dictionary<string, object> vaults = new Dictionary<string, object>(); vaults[vaultId] = entry; root["vaults"] = vaults;
+        root.Remove("updateDisabled");
         Directory.CreateDirectory(dataDir); string temporary = registryPath + ".new"; File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(root));
         if (File.Exists(registryPath)) { File.Copy(registryPath, registryPath + ".bak", true); File.Copy(temporary, registryPath, true); File.Delete(temporary); } else File.Move(temporary, registryPath);
     }

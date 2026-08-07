@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { compareVersions, findReleaseAsset, hostArchitecture, portablePaths, readPeMachine } = require("../src/core.js");
+const { assertSafeTransferTarget, compareVersions, findPortablePackageRoot, findReleaseAsset, hostArchitecture, portablePaths, readPeMachine, targetPackageRoot } = require("../src/core.js");
 
 describe("compareVersions", () => {
   it("compares semantic numeric components", () => {
@@ -16,10 +16,31 @@ describe("compareVersions", () => {
 });
 
 describe("portablePaths", () => {
-  it("derives the package from the vault drive", () => {
-    const result = portablePaths("X:\\Notes\\Vault");
-    expect(result.portableRoot).toBe(path.win32.join("X:\\", "Apps", "Portables", "ObsidianPortable"));
+  it("discovers a package at any vault ancestor", () => {
+    const config = path.win32.join("X:\\Portable Kit", "Apps", "Portables", "ObsidianPortable", "portable.ini");
+    const result = portablePaths("X:\\Portable Kit\\Vault\\Notes", candidate => candidate === config, () => "Vault=Vault\\Notes");
+    expect(result.packageRoot).toBe("X:\\Portable Kit");
+    expect(result.portableRoot).toBe(path.win32.join(result.packageRoot, "Apps", "Portables", "ObsidianPortable"));
     expect(result.appExe).toBe(path.win32.join(result.portableRoot, "App", "Obsidian.exe"));
+  });
+
+  it("reports a fresh vault without inventing a package", () => {
+    expect(portablePaths("X:\\Notes\\Vault", () => false)).toMatchObject({ configured: false, packageRoot: null });
+    expect(findPortablePackageRoot("X:\\Notes\\Vault", () => false)).toBeNull();
+  });
+
+  it("does not adopt another vault's package on the same drive", () => {
+    const config = path.win32.join("X:\\", "Apps", "Portables", "ObsidianPortable", "portable.ini");
+    const result = portablePaths("X:\\Other Vault", candidate => candidate === config, () => "Vault=Main Vault");
+    expect(result.configured).toBe(false);
+  });
+
+  it("creates a friendly child package and rejects nested transfers", () => {
+    expect(targetPackageRoot("X:\\")).toBe("X:\\Obsidian Portable");
+    expect(targetPackageRoot("X:\\Obsidian Portable")).toBe("X:\\Obsidian Portable");
+    expect(assertSafeTransferTarget("X:\\Current\\Vault", "Y:\\Obsidian Portable")).toBe("Y:\\Obsidian Portable");
+    expect(() => assertSafeTransferTarget("X:\\Current", "X:\\Current\\Copy")).toThrow(/outside/i);
+    expect(() => assertSafeTransferTarget("X:\\Current\\Vault", "X:\\Current")).toThrow(/outside/i);
   });
 });
 

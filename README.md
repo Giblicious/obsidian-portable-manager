@@ -1,46 +1,55 @@
 # Obsidian Portable Manager
 
-Obsidian Portable Manager audits, repairs, and updates a portable Windows
-Obsidian package from inside Obsidian. It keeps the application runtime and
-portable framework separate from the vault and profile, so updates do not
-replace notes, settings, plugins, or sync credentials.
+Obsidian Portable Manager creates and cares for a complete portable Windows
+Obsidian workspace from inside Obsidian. Install it with BRAT in any vault,
+choose a flash drive or folder, and it copies the vault, installs the signed
+runtime and launcher, closes the original session, and opens the portable copy.
 
 ## What it manages
 
-- Detects the flash-drive root from the active vault.
+- Creates a portable workspace at a user-selected drive or folder.
+- Copies an existing vault without moving or modifying the source.
+- Transfers an existing portable workspace to another location and reopens it.
+- Discovers portable packages at any folder depth, including legacy drive-root
+  layouts.
 - Verifies the expected portable package layout and host CPU architecture.
-- Updates Obsidian from the official `obsidianmd/obsidian-releases` installer.
+- Keeps Obsidian's built-in app updates inside the portable Data profile.
+- Automatically stages runtime and framework updates for the next normal close.
+- Provides one-click update, repair, restart, and transfer actions.
 - Verifies installer size, Authenticode signer, extracted version, and PE type.
 - Updates the root launcher, maintenance helper, and extraction tools from this
   repository's versioned framework release.
 - Stages replacements, waits for Obsidian to close, retains rollback copies,
   and reports the result on the next launch.
 
-The manager intentionally does not modify `Data`, the vault, Remotely Save or
-other plugin settings, or `portable.ini` during an update.
+Runtime and framework maintenance never replaces `Data`, the vault, Remotely
+Save, other plugin settings, or `portable.ini`. The launcher only repairs the
+portable vault registry and keeps built-in app updates enabled.
 
-## Install with BRAT
+## User experience
 
-1. Install and enable BRAT in Obsidian.
-2. Choose **Add Beta Plugin** in BRAT settings.
-3. Enter `Giblicious/obsidian-portable-manager`.
-4. Enable **Obsidian Portable Manager**.
+Add `Giblicious/obsidian-portable-manager` in BRAT and enable the plugin. On a
+fresh vault, the guided setup screen opens automatically. The only choice is
+the destination location; setup, validation, closing, and relaunch are handled
+by the manager.
 
-The plugin expects this drive-relative layout:
+New packages use this package-relative layout and can live anywhere:
 
 ```text
-Obsidian Portable.exe
-Apps/Portables/ObsidianPortable/
-  App/Obsidian.exe
-  Data/
-  Maintenance/PortableMaintenance.ps1
-  Tools/7z.exe
-  portable.ini
-  portable-manifest.json
+Obsidian Portable/
+  Obsidian Portable.exe
+  Vault/<vault name>/
+  Apps/Portables/ObsidianPortable/
+    App/Obsidian.exe
+    Data/
+    Maintenance/PortableMaintenance.ps1
+    Tools/7z.exe
+    portable.ini
+    portable-manifest.json
 ```
 
-Existing packages using `manifest.json` remain supported and are migrated to
-`portable-manifest.json` by a successful maintenance operation.
+Existing drive-root packages and packages using `manifest.json` remain
+supported and are migrated during successful maintenance or transfer.
 
 ## Release policy
 
